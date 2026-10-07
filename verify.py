@@ -1,0 +1,38 @@
+"""Check that fiducial_198.txt is a SIC-POVM fiducial in dimension d = 198.
+
+A vector psi in C^d is a SIC fiducial iff |<psi|X^a Z^b|psi>|^2 = |psi|^4/(d+1) for every
+(a, b) != (0, 0), where X|k> = |k+1 mod d> and Z|k> = exp(2 pi i k/d)|k>.
+File layout and conventions follow Scott and Grassl (arXiv:0910.5784, arXiv:1703.03993).
+
+python verify.py             # double precision, standard library only, about 1 s
+python verify.py --precise   # 160 digits, needs mpmath, about 1 min
+"""
+
+import cmath
+import re
+import sys
+from pathlib import Path
+
+if "--precise" in sys.argv:
+    import mpmath
+
+    mpmath.mp.dps = 160
+    one, cplx, root = mpmath.mpf(1), mpmath.mpc, lambda t: mpmath.expjpi(2 * mpmath.mpf(t))
+else:
+    one, cplx, root = 1.0, lambda re_, im: complex(float(re_), float(im)), lambda t: cmath.exp(2j * cmath.pi * t)
+
+text = (Path(__file__).parent / "fiducial_198.txt").read_text()
+rows = [re.findall(r"[+-]\.\d+e-?\d+", line) for line in text.splitlines() if line.strip()]
+psi = [cplx(re_.replace(".", "0.", 1), im.replace(".", "0.", 1)) for re_, im in rows]
+d = len(psi)
+norm2 = sum(abs(z) ** 2 for z in psi)
+w = [root(one * e / d) for e in range(d)]
+worst = 0 * one
+for a in range(d):
+    v = [psi[(k + a) % d].conjugate() * psi[k] for k in range(d)]
+    for b in range(d):
+        if (a, b) != (0, 0):
+            overlap = sum(v[k] * w[b * k % d] for k in range(d))
+            worst = max(worst, abs(abs(overlap) ** 2 / norm2**2 - one / (d + 1)))
+print(f"d = {d}: max over {d * d - 1} displacements of | |<psi|D_p|psi>|^2 - 1/{d + 1} | = {float(worst):.2e}")
+print("PASS" if worst < (1e-140 if "--precise" in sys.argv else 1e-12) else "FAIL")

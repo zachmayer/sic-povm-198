@@ -1,0 +1,3 @@
+__pycache__/
+fiducial_*.txt
+!fiducial_198.txt

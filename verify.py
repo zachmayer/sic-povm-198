@@ -1,11 +1,12 @@
-"""Check that fiducial_198.txt is a SIC-POVM fiducial in dimension d = 198.
+"""Check that a file holds a SIC-POVM fiducial; by default fiducial_198.txt.
 
 A vector psi in C^d is a SIC fiducial iff |<psi|X^a Z^b|psi>|^2 = |psi|^4/(d+1) for every
 (a, b) != (0, 0), where X|k> = |k+1 mod d> and Z|k> = exp(2 pi i k/d)|k>.
 File layout and conventions follow Scott and Grassl (arXiv:0910.5784, arXiv:1703.03993).
+This check shares no code with search.py or refine.py.
 
-python verify.py             # double precision, standard library only, about 1 s
-python verify.py --precise   # 160 digits, needs mpmath, about 1 min
+python verify.py [FILE]             # double precision, standard library only, about 1 s
+python verify.py [FILE] --precise   # 160 digits, needs mpmath, about 1 min
 """
 
 import cmath
@@ -21,7 +22,8 @@ if "--precise" in sys.argv:
 else:
     one, cplx, root = 1.0, lambda re_, im: complex(float(re_), float(im)), lambda t: cmath.exp(2j * cmath.pi * t)
 
-text = (Path(__file__).parent / "fiducial_198.txt").read_text()
+files = [arg for arg in sys.argv[1:] if arg != "--precise"]
+text = Path(files[0] if files else Path(__file__).parent / "fiducial_198.txt").read_text()
 rows = [re.findall(r"[+-]\.\d+e-?\d+", line) for line in text.splitlines() if line.strip()]
 psi = [cplx(re_.replace(".", "0.", 1), im.replace(".", "0.", 1)) for re_, im in rows]
 d = len(psi)

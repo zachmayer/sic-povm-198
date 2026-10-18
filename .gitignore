@@ -1,3 +1,4 @@
 __pycache__/
 fiducial_*.txt
+!fiducial_197.txt
 !fiducial_198.txt

@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["numpy", "scipy", "python-flint"]
 # ///
-"""Refine a SIC fiducial found by search.py to 150 significant digits.
+"""Refine a double-precision SIC fiducial, from search.py or stark.jl, to 150 significant digits.
 
 Solves the d^2 equations |C_p|^2 = t_p, where C_(a,b) = sum_k conj(psi_(k+a)) psi_k w^(-bk), t_0 = 1
 fixes the norm and t_p = 1/(d+1) otherwise, by Gauss-Newton in 640-bit ball arithmetic (python-flint).
@@ -11,6 +11,7 @@ precision, so each step gains about 15 digits. The result is written as fiducial
 Grassl's layout, with unit norm and a real positive first component.
 
   uv run refine.py fiducial_198_seed199012011_trial<K>.txt   # rewrites fiducial_198.txt, about a minute
+  uv run refine.py fiducial_197_stark.txt                    # rewrites fiducial_197.txt
 """
 
 import argparse
@@ -82,7 +83,7 @@ def fraction(x: arb) -> Fraction:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("fiducial", type=Path, help="a file written by search.py")
+    parser.add_argument("fiducial", type=Path, help="a file written by search.py or stark.jl")
     strings = read_fiducial(parser.parse_args().fiducial)
     d = len(strings)
     J = double_jacobian(np.array([complex(float(re), float(im)) for re, im in strings]))

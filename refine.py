@@ -7,7 +7,7 @@
 """Refine a SIC fiducial from double precision (search.py, stark.jl) to 150 significant digits.
 
 Solves the d^2 equations |C_p|^2 = t_p, where C_(a,b) = sum_k conj(psi_(k+a)) psi_k w^(-bk), t_0 = 1
-fixes the norm and t_p = 1/(d+1) otherwise, by Gauss-Newton in 640-bit ball arithmetic (python-flint).
+fixes the norm and t_p = 1/(d+1) otherwise, by Gauss-Newton in 640-bit arithmetic (python-flint).
 No symmetry is imposed. Every step uses the inverse Gauss-Newton matrix computed once in double
 precision, so each step gains about 15 digits. Only the input's double-precision part is used. The
 result is written as fiducial_<d>.txt in Scott and Grassl's layout, with unit norm and a real positive

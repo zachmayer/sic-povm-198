@@ -6,7 +6,8 @@
 # ///
 """Search for SIC-POVM fiducials in dimension d with Scott's numerical method (arXiv:1703.03993).
 
-Each trial draws a random vector in the largest eigenspace of Zauner's order-3 unitary and minimizes
+Each trial draws a random vector in the eigenvalue-1 eigenspace of Zauner's order-3 unitary (a largest
+one, dimension floor((d+3)/3)) and minimizes
 the frame potential F(psi) = sum_p |<psi|D_p|psi>|^4 / <psi|psi>^4, summed over the d^2 displacements
 D_p, with L-BFGS. F >= 2d/(d+1), with equality exactly at SIC fiducials. A trial that ends within
 1e-5 of the bound is polished by Gauss-Newton on the SIC equations and kept if every overlap
@@ -32,17 +33,12 @@ from scipy.optimize import minimize
 
 
 def zauner_eigenspace(d: int) -> np.ndarray:
-    """Orthonormal basis of the largest eigenspace of Scott and Grassl's Zauner unitary,
-    U_Z[r,s] = exp(i pi (d-1)/12)/sqrt(d) exp(i pi (2rs + (d+1) r^2)/d)."""
+    """Orthonormal basis of the eigenvalue-1 eigenspace of Scott and Grassl's Zauner unitary,
+    U_Z[r,s] = exp(i pi (d-1)/12)/sqrt(d) exp(i pi (2rs + (d+1) r^2)/d), for which U_Z^3 = I."""
     r = np.arange(d)
     U = np.exp(1j * np.pi * (d - 1) / 12) / np.sqrt(d) * np.exp(1j * np.pi * ((2 * np.outer(r, r) + (d + 1) * (r**2)[:, None]) % (2 * d)) / d)
-    root = (U @ U @ U)[0, 0] ** (1 / 3)  # U_Z^3 is a scalar
-    bases = []
-    for m in range(3):
-        lam = root * np.exp(2j * np.pi * m / 3)
-        u, s, _ = np.linalg.svd((np.eye(d) + U / lam + (U @ U) / lam**2) / 3)  # projector onto eigenvalue lam
-        bases.append(u[:, : int(np.sum(s > 0.5))])
-    return max(bases, key=lambda B: B.shape[1])
+    u, s, _ = np.linalg.svd((np.eye(d) + U + U @ U) / 3)  # the projector onto eigenvalue 1
+    return u[:, : int(np.sum(s > 0.5))]
 
 
 class Problem:

@@ -1,5 +1,8 @@
 # /// script
+# requires-python = ">=3.10"
 # dependencies = ["mpmath"]
+# [tool.uv]
+# exclude-newer = "2026-10-19T00:00:00Z"
 # ///
 """Check that files hold SIC-POVM fiducials in Scott and Grassl's conventions; by default every fiducial_<d>.txt here.
 
@@ -50,5 +53,6 @@ for path in files or [p for p in here if re.fullmatch(r"fiducial_\d+\.txt", p.na
     ok = d > 1 and (not named or int(named[1]) == d) and psi[0].imag == 0 and psi[0].real > 0
     ok = ok and max(worst, zauner) < (1e-147 if precise else 1e-12)
     failed |= not ok
-    print(f"{path.name}: d = {d}, max deviation {float(worst):.1e}, Zauner residual {float(zauner):.1e} {'PASS' if ok else 'FAIL'}")
+    k = round(cmath.phase(complex(lam)) / (2 * cmath.pi / 3)) % 3  # U_Z's eigenvalues are the cube roots of unity
+    print(f"{path.name}: d = {d}, max deviation {float(worst):.1e}, Zauner residual {float(zauner):.1e}, eigenvalue ω^{k} {'PASS' if ok else 'FAIL'}")
 sys.exit(failed)

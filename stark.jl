@@ -16,7 +16,7 @@
 # Writes fiducial_<d>_stark.txt in Scott and Grassl's layout, as search.py does: an eigenvector of their
 # order-3 Zauner unitary U_Z. refine.py takes it to 150 digits. Each step's time goes to stderr.
 #
-#   julia --project=. stark.jl 197 198 203
+#   julia --project=. stark.jl 197 203 207
 
 using Zauner, LinearAlgebra, Printf
 using Nemo: randseed!

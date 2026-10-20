@@ -9,8 +9,8 @@
 A unit vector psi in C^d is a SIC fiducial iff |<psi|X^a Z^b|psi>|^2 = 1/(d+1) for every (a, b) != (0, 0),
 where X|k> = |k+1 mod d> and Z|k> = exp(2 pi i k/d)|k>. Scott and Grassl's conventions (arXiv:0910.5784):
 psi_0 real and positive, and psi an eigenvector of their order-3 Zauner unitary
-U_Z[r,s] = exp(i pi (d-1)/12)/sqrt(d) exp(i pi (2rs + (d+1) r^2)/d), whose eigenvectors the fiducials in
-Scott's arXiv:1703.03993 are, for even and odd d. This check shares no code with the other scripts.
+U_Z[r,s] = exp(i pi (d-1)/12)/sqrt(d) exp(i pi (2rs + (d+1) r^2)/d), whose eigenvectors Scott's Zauner-type
+fiducials in arXiv:1703.03993 are (checked: d = 52, 55, 60, 67, 70, 88). This check shares no code with the other scripts.
 
 python verify.py [FILE ...]             # double precision, standard library only, about 1 s per file
 uv run verify.py [FILE ...] --precise   # 160 digits, about 3 min per file

@@ -13,7 +13,7 @@ uv run verify.py --precise   # 160 digits: about 1e-151 (about 3 min per file)
 
 **d = 198** by Scott's numerical method: random starts in the largest eigenspace of Zauner's unitary, each minimized with L-BFGS. It ran on 800 cloud cores with [Modal](https://modal.com), about 0.2 core-seconds per trial, and found this SIC within its first hour.
 
-**The other 14** by the algebraic method of Appleby, Flammia and Kopp ([arXiv:2501.03970](https://arxiv.org/abs/2501.03970)), which builds a fiducial from Stark units instead of searching for one. `stark.jl` computes a ghost's overlaps on one Galois orbit, identifies them exactly by LLL over a ring class field H of ℚ(√((d+1)(d−3))), applies an automorphism of H that negates the square root, and completes the SIC numerically by alternating projections. It runs Flammia's [Zauner.jl](https://github.com/sflammia/Zauner.jl), pinned by commit, and replaces the steps that fail or take hours at these sizes; each dimension takes 1–4 minutes and about 6 GB. The same random search at d = 197 ran 46.5 million trials without finding a SIC.
+**The other 14** by the algebraic method of Appleby, Flammia and Kopp ([arXiv:2501.03970](https://arxiv.org/abs/2501.03970)), which builds a fiducial from Stark units instead of searching for one. `stark.jl` computes a ghost's overlaps on one Galois orbit, identifies them exactly by LLL over a ring class field H of ℚ(√((d+1)(d−3))), applies an automorphism of H that negates the square root, and completes the SIC numerically by alternating projections. It runs Flammia's [Zauner.jl](https://github.com/sflammia/Zauner.jl), pinned by commit, and replaces the steps that fail or take hours at these sizes; each dimension takes a few minutes and about 5 GB. Its choices are canonical (see its header): of a dimension's Galois-conjugate SICs it returns a fixed one, as a fixed representative. The same random search at d = 197 ran 46.5 million trials without finding a SIC.
 
 `refine.py` takes each fiducial from double precision to 150 digits by Gauss–Newton in 640-bit ball arithmetic.
 
@@ -26,7 +26,7 @@ uv run search.py 19                                   # Scott's search: a SIC in
 uvx modal run modal_search.py --d 198 --containers 25 --minutes 60  # a search the size of the one that found d = 198
 ```
 
-With Julia 1.13.2 and this Manifest, `stark.jl` then `refine.py` rewrite each algebraic file byte for byte on our machine (macOS, Apple silicon). `stark.jl` seeds Hecke, which fixes the Galois conjugate it returns, but floating-point differences on another machine could select a different, Clifford-equivalent fiducial. Searches are not repeatable at all: each trial's path depends on floating-point details, so a repeat finds SICs at its own pace.
+`stark.jl` then `refine.py` rewrite each algebraic file byte for byte, whatever the random seeds or the order of dimensions (tested with Julia 1.13.2 on macOS, Apple silicon). Searches are not repeatable: each trial's path depends on floating-point details, so a repeat finds SICs at its own pace.
 
 *Mostly AI-generated: Gemini 4 Argon first found the algebraic SICs; Claude Opus 5.5 found d = 198 and wrote the code (`stark.jl` from Argon's) and this README.*
 

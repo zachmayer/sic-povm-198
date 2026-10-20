@@ -1,14 +1,17 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = ["numpy", "scipy"]
+# [tool.uv]
+# exclude-newer = "2026-10-19T00:00:00Z"
 # ///
 """Search for SIC-POVM fiducials in dimension d with Scott's numerical method (arXiv:1703.03993).
 
-Each trial draws a random vector in an eigenspace of Zauner's order-3 unitary and minimizes the
-frame potential F(psi) = sum_p |<psi|D_p|psi>|^4 / <psi|psi>^4, summed over the d^2 displacements
+Each trial draws a random vector in the eigenvalue-1 eigenspace of Zauner's order-3 unitary (a largest
+one, dimension floor((d+3)/3)) and minimizes
+the frame potential F(psi) = sum_p |<psi|D_p|psi>|^4 / <psi|psi>^4, summed over the d^2 displacements
 D_p, with L-BFGS. F >= 2d/(d+1), with equality exactly at SIC fiducials. A trial that ends within
 1e-5 of the bound is polished by Gauss-Newton on the SIC equations and kept if every overlap
-|<psi|D_p|psi>|^2 matches 1/(d+1) to within 1e-10.
+|<psi|D_p|psi>|^2 matches 1/(d+1) to within 1e-12.
 
 The search stops at its first SIC and writes it to fiducial_<d>_seed<seed>_trial<trial>.txt, to
 double precision, in the file layout and conventions of Scott and Grassl (arXiv:0910.5784);
@@ -29,26 +32,13 @@ import scipy.fft as sfft
 from scipy.optimize import minimize
 
 
-def tau_power(d: int, e: np.ndarray) -> np.ndarray:
-    """tau^e for tau = -exp(i pi/d) = exp(i pi (d+1)/d), with exponents taken mod 2d."""
-    return np.exp(1j * np.pi * ((((d + 1) * e) % (2 * d)) / d))
-
-
 def zauner_eigenspace(d: int) -> np.ndarray:
-    """Orthonormal basis of the largest eigenspace of U_Z = exp(i pi (d-1)/12)/sqrt(d) sum_rs tau^(2rs + (d+1)r^2) |r><s|.
-
-    For odd d, U_Z is Scott and Grassl's Zauner unitary. For even d it is D_(0,d/2) times theirs,
-    so its eigenvectors become theirs under D_(d/2,d/2); see scott_convention.
-    """
+    """Orthonormal basis of the eigenvalue-1 eigenspace of Scott and Grassl's Zauner unitary,
+    U_Z[r,s] = exp(i pi (d-1)/12)/sqrt(d) exp(i pi (2rs + (d+1) r^2)/d), for which U_Z^3 = I."""
     r = np.arange(d)
-    U = np.exp(1j * np.pi * (d - 1) / 12) / np.sqrt(d) * tau_power(d, 2 * np.outer(r, r) + (d + 1) * (r**2)[:, None])
-    root = (U @ U @ U)[0, 0] ** (1 / 3)  # U_Z^3 is a scalar
-    bases = []
-    for m in range(3):
-        lam = root * np.exp(2j * np.pi * m / 3)
-        u, s, _ = np.linalg.svd((np.eye(d) + U / lam + (U @ U) / lam**2) / 3)  # projector onto eigenvalue lam
-        bases.append(u[:, : int(np.sum(s > 0.5))])
-    return max(bases, key=lambda B: B.shape[1])
+    U = np.exp(1j * np.pi * (d - 1) / 12) / np.sqrt(d) * np.exp(1j * np.pi * ((2 * np.outer(r, r) + (d + 1) * (r**2)[:, None]) % (2 * d)) / d)
+    u, s, _ = np.linalg.svd((np.eye(d) + U + U @ U) / 3)  # the projector onto eigenvalue 1
+    return u[:, : int(np.sum(s > 0.5))]
 
 
 class Problem:
@@ -130,26 +120,22 @@ class Problem:
                 break
             x = x + np.linalg.lstsq(self.jacobian(x), -r, rcond=1e-12)[0]
             x = x / np.linalg.norm(self.psi(x))
-        if np.max(np.abs(self.residuals(x))) > 1e-10:
+        if np.max(np.abs(self.residuals(x))) > 1e-12:
             return None
         return self.psi(x)
 
 
 def scott_convention(psi: np.ndarray) -> np.ndarray:
-    """Map an eigenvector of our U_Z to Scott and Grassl's (D_(d/2,d/2) for even d), then fix the
-    gauge: unit norm, first component real and positive."""
-    d = psi.size
-    if d % 2 == 0:
-        psi = np.roll(psi * (-1.0) ** np.arange(d), d // 2)
+    """Scott and Grassl's gauge: unit norm, first component real and positive."""
     psi = psi * np.conj(psi[0]) / abs(psi[0]) / np.linalg.norm(psi)
     psi[0] = psi[0].real
     return psi
 
 
-def search(d: int, seed: int, minutes: float = 1.0) -> tuple[int, tuple[int, str] | None]:
+def search(d: int, seed: int, minutes: float = 1.0) -> tuple[int, str | None]:
     """Run trials until one finds a SIC or time runs out.
 
-    Returns the number of trials run and, for a SIC, its trial number and fiducial-file text.
+    Returns the number of trials run (for a SIC, the last one found it) and the SIC's fiducial-file text.
     """
     problem = Problem(d)
     rng = np.random.default_rng(seed)
@@ -158,7 +144,7 @@ def search(d: int, seed: int, minutes: float = 1.0) -> tuple[int, tuple[int, str
         k += 1
         psi = problem.trial(problem.random_start(rng))
         if psi is not None:
-            return k, (k, double_precision_file(psi))
+            return k, double_precision_file(psi)
     return k, None
 
 
@@ -199,11 +185,10 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=0, help="random seed (default 0)")
     parser.add_argument("--minutes", type=float, default=1.0, help="time budget (default 1)")
     args = parser.parse_args()
-    count, found = search(args.d, args.seed, args.minutes)
-    if found is None:
-        print(f"d = {args.d}, seed {args.seed}: no SIC in {count} trials")
+    k, text = search(args.d, args.seed, args.minutes)
+    if text is None:
+        print(f"d = {args.d}, seed {args.seed}: no SIC in {k} trials")
         return
-    k, text = found
     path = Path(f"fiducial_{args.d}_seed{args.seed}_trial{k}.txt")
     path.write_text(text)
     print(f"d = {args.d}, seed {args.seed}: SIC in trial {k}, written to {path}")

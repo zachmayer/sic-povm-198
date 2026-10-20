@@ -1,16 +1,20 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = ["numpy", "scipy", "python-flint"]
+# [tool.uv]
+# exclude-newer = "2026-10-19T00:00:00Z"
 # ///
-"""Refine a SIC fiducial found by search.py to 150 significant digits.
+"""Refine a SIC fiducial from double precision (search.py, stark.jl) to 150 significant digits.
 
 Solves the d^2 equations |C_p|^2 = t_p, where C_(a,b) = sum_k conj(psi_(k+a)) psi_k w^(-bk), t_0 = 1
-fixes the norm and t_p = 1/(d+1) otherwise, by Gauss-Newton in 640-bit ball arithmetic (python-flint).
+fixes the norm and t_p = 1/(d+1) otherwise, by Gauss-Newton in 640-bit arithmetic (python-flint).
 No symmetry is imposed. Every step uses the inverse Gauss-Newton matrix computed once in double
-precision, so each step gains about 15 digits. The result is written as fiducial_<d>.txt in Scott and
-Grassl's layout, with unit norm and a real positive first component.
+precision, so each step gains about 15 digits. Only the input's double-precision part is used. The
+result is written as fiducial_<d>.txt in Scott and Grassl's layout, with unit norm and a real positive
+first component.
 
-  uv run refine.py fiducial_198_seed199012011_trial<K>.txt   # rewrites fiducial_198.txt, about a minute
+  uv run refine.py fiducial_197_stark.txt   # rewrites fiducial_197.txt
+  uv run refine.py fiducial_198.txt         # re-derives its 150 digits from the first 16
 """
 
 import argparse
@@ -35,8 +39,8 @@ def double_jacobian(psi: np.ndarray) -> np.ndarray:
     J = np.empty((d * d, 2 * d))
     for j in range(d):
         m = (j - a) % d
-        t1 = psi[m] * roots[(b * m) % d]  # d C_ab / d psi_j
-        t2 = np.conj(psi[(j + a) % d]) * roots[(b * j) % d]  # d C_ab / d conj(psi_j)
+        t1 = psi[m] * roots[(b * m) % d]  # d C_ab / d conj(psi_j)
+        t2 = np.conj(psi[(j + a) % d]) * roots[(b * j) % d]  # d C_ab / d psi_j
         J[:, j] = (2 * np.real(np.conj(C) * (t1 + t2))).ravel()
         J[:, d + j] = (2 * np.real(np.conj(C) * (1j * (t2 - t1)))).ravel()
     return J
@@ -82,7 +86,7 @@ def fraction(x: arb) -> Fraction:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("fiducial", type=Path, help="a file written by search.py")
+    parser.add_argument("fiducial", type=Path, help="a file written by search.py or stark.jl")
     strings = read_fiducial(parser.parse_args().fiducial)
     d = len(strings)
     J = double_jacobian(np.array([complex(float(re), float(im)) for re, im in strings]))
@@ -90,7 +94,7 @@ def main() -> None:
     keep = evals > 1e-8 * evals[-1]  # drops the one null direction, the global phase
     M = (evecs[:, keep] / evals[keep]) @ evecs[:, keep].T
     overlaps = Overlaps(d)
-    psi = [acb(arb(re), arb(im)) for re, im in strings]
+    psi = [acb(float(re), float(im)) for re, im in strings]
     for step in range(20):
         C = overlaps.C(psi)
         error = overlaps.error(C)
@@ -100,6 +104,8 @@ def main() -> None:
         g = overlaps.gradient(psi, C)
         delta = M @ np.array([float(z.real) for z in g] + [float(z.imag) for z in g])
         psi = [(p - acb(delta[j], delta[d + j])).mid() for j, p in enumerate(psi)]
+    else:
+        raise SystemExit(f"no convergence in 20 steps: {error:.1e}; fiducial_{d}.txt left as it was")
     norm = sum((p.real * p.real + p.imag * p.imag for p in psi), arb(0)).sqrt()
     phase = psi[0].conjugate() / abs(psi[0])
     psi = [p * phase / norm for p in psi]

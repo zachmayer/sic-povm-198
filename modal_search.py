@@ -25,7 +25,7 @@ with image.imports():
 
 
 @app.function(cpu=CORES, memory=512 * CORES, timeout=24 * 3600)
-def run(d: int, seeds: list[int], minutes: float) -> list[tuple[int, int, tuple[int, str] | None]]:
+def run(d: int, seeds: list[int], minutes: float) -> list[tuple[int, int, str | None]]:
     # Modal sets OPENBLAS_NUM_THREADS to the core count. Each search needs one thread, and 32
     # searches with 32 threads each thrash; spawned workers load numpy with this setting instead.
     os.environ.update(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1")
@@ -39,11 +39,10 @@ def main(d: int = 198, containers: int = 25, minutes: float = 60, seed: int = 0)
     seeds = [list(range(seed + c * CORES, seed + (c + 1) * CORES)) for c in range(containers)]
     trials = sics = 0
     for results in run.map([d] * containers, seeds, [minutes] * containers):
-        for s, count, found in results:
+        for s, count, text in results:
             trials += count
-            if found:
-                k, text = found
-                path = Path(f"fiducial_{d}_seed{s}_trial{k}.txt")
+            if text:
+                path = Path(f"fiducial_{d}_seed{s}_trial{count}.txt")
                 path.write_text(text)
                 sics += 1
                 print(f"SIC found: {path}", flush=True)

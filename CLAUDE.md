@@ -1,3 +1,9 @@
-# sic-povm-198
+# sic-povms
 
 - **Merge level: push to `main`.** Claude may push straight to `main` or merge its own PRs.
+- **The README is the paper.** Every claim in it is checkable from this repo, and every number in it comes from a run recorded in a PR. The results are numerical: never call them exact, proved or certified.
+- **`fiducial_<d>.txt` is written only by `refine.py`:** Scott–Grassl layout, 150 digits, unit norm, ψ_0 real and positive, an eigenvector of Scott–Grassl's Zauner unitary (formula and its provenance in `verify.py`). Intermediates (`*_stark.txt`, `*_seed*_trial*.txt`) stay untracked.
+- **`verify.py` is the independent judge:** it imports nothing from the other scripts and nothing imports it. A new claim about the files gets a check there. Every published file passes `python verify.py` and `uv run verify.py --precise`.
+- **Adding a dimension:** `julia --project=. stark.jl <d>`, then `uv run refine.py fiducial_<d>_stark.txt`, then both `verify.py` modes. Before the README calls it new, search Grassl's tables, Scott 2017, Bengtsson–Grassl (arXiv:2512.13201), Appleby–Flammia–Kopp (arXiv:2501.03970) and recent arXiv for that d. Update the README's title count and dimension list in the same commit.
+- **Changing `stark.jl`, `refine.py`, the Manifest or the Zauner.jl rev:** regenerate every algebraic d (Julia 1.13.2, one thread) and require `git diff --exit-code fiducial_*.txt`. A changed published file is a new result, so say why in the PR. `stark.jl`'s output must not depend on random state, run order or Hecke's representation of H: its header states the canonical rules, and a change keeps them.
+- **Even d:** displacement labels and symplectic matrices live mod 2d (D_(p+du) = ±D_p).

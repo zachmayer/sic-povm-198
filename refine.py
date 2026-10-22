@@ -10,11 +10,11 @@ Solves the d^2 equations |C_p|^2 = t_p, where C_(a,b) = sum_k conj(psi_(k+a)) ps
 fixes the norm and t_p = 1/(d+1) otherwise, by Gauss-Newton in 640-bit arithmetic (python-flint).
 No symmetry is imposed. Every step uses the inverse Gauss-Newton matrix computed once in double
 precision, so each step gains about 15 digits. Only the input's double-precision part is used. The
-result is written as fiducial_<d>.txt in Scott and Grassl's layout, with unit norm and a real positive
+result is written as fiducials/fiducial_<d>.txt in Scott and Grassl's layout, with unit norm and a real positive
 first component.
 
-  uv run refine.py fiducial_197_stark.txt   # rewrites fiducial_197.txt
-  uv run refine.py fiducial_198.txt         # re-derives its 150 digits from the first 16
+  uv run refine.py fiducial_197_stark.txt     # rewrites fiducials/fiducial_197.txt
+  uv run refine.py fiducials/fiducial_198.txt # re-derives its 150 digits from the first 16
 """
 
 import argparse
@@ -105,7 +105,7 @@ def main() -> None:
         delta = M @ np.array([float(z.real) for z in g] + [float(z.imag) for z in g])
         psi = [(p - acb(delta[j], delta[d + j])).mid() for j, p in enumerate(psi)]
     else:
-        raise SystemExit(f"no convergence in 20 steps: {error:.1e}; fiducial_{d}.txt left as it was")
+        raise SystemExit(f"no convergence in 20 steps: {error:.1e}; fiducials/fiducial_{d}.txt left as it was")
     norm = sum((p.real * p.real + p.imag * p.imag for p in psi), arb(0)).sqrt()
     phase = psi[0].conjugate() / abs(psi[0])
     psi = [p * phase / norm for p in psi]
@@ -113,7 +113,7 @@ def main() -> None:
         return Fraction(0) if abs(x) < Fraction(1, 10**180) else x
 
     rows = [(exact(fraction(p.real)), Fraction(0) if j == 0 else exact(fraction(p.imag))) for j, p in enumerate(psi)]
-    out = Path(f"fiducial_{d}.txt")
+    out = Path(f"fiducials/fiducial_{d}.txt")
     out.write_text(fiducial_text(rows, 150))
     print(f"wrote {out}")
 

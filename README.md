@@ -9,7 +9,7 @@ This repo has a numerical Weyl–Heisenberg SIC fiducial for every d from 197 to
 
 This is about explicit fiducials. A recent manuscript, [*Stark units for real quadratic fields and reciprocity laws*](https://www.danrad.net/papers/stark-reciprocity.pdf), claims the results needed for Zauner's conjecture in general; we have not checked it.
 
-Each SIC is the orbit of a fiducial ψ under the d² displacements D_p = X^a Z^b (up to phase), so ψ determines it. `fiducial_<d>.txt` gives ψ to 150 digits in the file format and conventions of Scott and Grassl ([arXiv:0910.5784](https://arxiv.org/abs/0910.5784)) and Scott (arXiv:1703.03993): unit norm, ψ_0 real and positive, and an eigenvector of their order-3 Zauner unitary U_Z. These are numerical solutions, not exact ones. `verify.py` checks all of it and shares no code with the other scripts:
+Each SIC is the orbit of a fiducial ψ under the d² displacements D_p = X^a Z^b (up to phase), so ψ determines it. `fiducials/fiducial_<d>.txt` gives ψ to 150 digits in the file format and conventions of Scott and Grassl ([arXiv:0910.5784](https://arxiv.org/abs/0910.5784)) and Scott (arXiv:1703.03993): unit norm, ψ_0 real and positive, and an eigenvector of their order-3 Zauner unitary U_Z. These are numerical solutions, not exact ones. `verify.py` checks all of it and shares no code with the other scripts:
 
 ```sh
 python3 verify.py            # every file, double precision; max deviation at most about 5e-17 (Python 3.10+, standard library)
@@ -31,8 +31,8 @@ uv run verify.py --precise   # 160 digits; PASS means deviation and Zauner resid
 ```sh
 julia --project=. -e 'using Pkg; Pkg.instantiate()'   # once; Julia 1.13.2
 julia --project=. stark.jl 197                        # fiducial_197_stark.txt, to double precision
-uv run refine.py fiducial_197_stark.txt               # rewrites fiducial_197.txt, unchanged
-uv run refine.py fiducial_198.txt                     # re-derives its 150 digits from the first 16, unchanged
+uv run refine.py fiducial_197_stark.txt               # rewrites fiducials/fiducial_197.txt, unchanged
+uv run refine.py fiducials/fiducial_198.txt           # re-derives its 150 digits from the first 16, unchanged
 uv run search.py 19                                   # Scott's search: a SIC in d = 19 in a second
 uvx modal run modal_search.py --d 198 --containers 25 --minutes 60  # a search the size of the one that found d = 198
 ```

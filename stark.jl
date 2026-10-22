@@ -3,24 +3,29 @@
 #
 # A binary quadratic form, of conductor 1 unless that ghost has F_a symmetry (which Zauner.jl does not support),
 # gives a "ghost" ψ, whose overlaps (d+1) ϕ'D_pψ / ϕ'ψ with its parity reversal ϕ are real Stark units,
-# products of Shintani's double sine function; Newton's method takes ψ to a few thousand bits. On one orbit of
-# the Galois group G, LLL then identifies those overlaps exactly over the ring class field H, through a normal
-# basis for each cyclic factor of G. An automorphism of H that sends √D to -√D turns them into the overlaps of
-# a SIC, up to a shift along G: the right shift is the one that gives a rank-one projector. Alternating
-# projections fill in the overlaps off the orbit and bring the fiducial to double precision.
+# products of Shintani's double sine function; Gauss–Newton on their equations takes ψ to thousands of bits. On one
+# orbit of the Galois group G, LLL then identifies those overlaps exactly over the ring class field H, through a
+# normal basis for each cyclic factor of G (Zauner.jl's recipes, tested at enough bits that a vanishing Fourier
+# coefficient shows as zero), with 1.5 times the bits, up to three times, when the estimate falls short. An
+# automorphism of H that sends √D to -√D turns them into the overlaps of a SIC, up to a shift along G: the right
+# shift is the one that gives a rank-one projector. Alternating projections fill in the overlaps off the orbit and
+# bring the fiducial to double precision.
 #
 # The result is canonical. Of the h automorphisms that send √D to -√D, each giving a Galois conjugate SIC, it
 # uses the one that maximizes σ(Σ_orbit u²), u the ghost overlaps. Of the fiducials U_A ψ, A commuting with U_Z's
 # symplectic matrix, all eigenvectors of U_Z, it keeps the largest |ψ_k| at the first k where they differ.
 #
 # Writes fiducial_<d>_stark.txt in Scott and Grassl's layout, as search.py does: an eigenvector of their
-# order-3 Zauner unitary U_Z. refine.py takes it to 150 digits. Each step's time goes to stderr.
+# order-3 Zauner unitary U_Z. refine.py takes it to 150 digits. Each step's time goes to stderr. With
+# STARK_CHECKPOINTS=<dir>, each Gauss–Newton step and result and each set of conjugated units is saved there, and a
+# rerun (after a preemption or a time cap) resumes from them instead of recomputing; the output is the same.
 #
 #   julia --project=. stark.jl 197 203 207
 
 using Zauner, LinearAlgebra, Printf
 using Nemo: randseed!
 using Random: seed!
+using Serialization: serialize, deserialize
 using GenericFFT: ifft
 using QuadGK: quadgk
 
@@ -30,6 +35,13 @@ pq(d) = (0:d-1) * (0:d-1)'
 const lap = let t = time()   # lap(s) prints s and the seconds since the last lap
     s -> (println(stderr, "  ", s, ": ", round(Int, time() - t), " s"); flush(stderr); t = time())
 end
+
+const ckdir = get(ENV, "STARK_CHECKPOINTS", "")
+ckpath(name) = joinpath(ckdir, name * ".jls")
+ckload(name) = deserialize(ckpath(name))
+ckstore(name, x) = (serialize(ckpath(name) * ".part", x); mv(ckpath(name) * ".part", ckpath(name); force=true))   # whole or none
+"f(), or with STARK_CHECKPOINTS set, its value saved under name there: loaded if present, else computed and saved."
+checkpoint(f, name) = isempty(ckdir) ? f() : isfile(ckpath(name)) ? ckload(name) : (x = f(); ckstore(name, x); x)
 
 "ϖ_n(z, t) = Π_{0≤j<n} (1 - e(z + jt)) for real z, t: a phase times sines that obey a three-term recurrence."
 function qpoch(z, t, n)
@@ -74,14 +86,18 @@ function stark_ghost(F)
     return sqrt(abs(χ[1, 1])) * circshift(cumprod(χ[:, 2] ./ χ[:, 1]), 1)
 end
 
-"Jacobian of Zauner._ghost_olp_func in closed form: each of its quartic sums has four terms with a given component."
-function ghost_jacobian(z::Vector{T}) where {T}
+"The ghost equations Zauner._ghost_olp_func(z, n) that bump solves: real parts for rows p = 0..3 of the overlaps, imaginary
+parts for p = 1..3, q ≤ d/2, those that do not vanish identically; about 1.75 per unknown (Zauner.jl uses one per unknown)."
+equations(d) = [r * d^2 + p * d + q for r in 0:1, p in 0:3, q in 1:d÷2 if !(r == 1 && (p == 0 || 2p == d || 2q == d))]
+
+"Jacobian of Zauner._ghost_olp_func(z, ns) in closed form: each of its quartic sums has four terms with a given component."
+function ghost_jacobian(z::Vector{T}, ns) where {T}
     d, m = 1 + length(z) ÷ 2, 1:length(z)÷2
     ψ = Complex{T}[1; complex.(z[m], z[m.+(d-1)])]
     v(k) = ψ[mod.(k, d).+1]
     N = sum(real(ψ[mod(-k, d)+1] * conj(ψ[k+1])) for k in 0:d-1)
-    J = zeros(T, length(z), length(z))
-    for (row, n) in enumerate(Zauner._lex_first_inds(d))
+    J = zeros(T, length(ns), length(z))
+    for (row, n) in enumerate(ns)
         r, p, q = radix(n, [2, d, d])
         A = conj.(v(-m .- p) .* v(-m .- q)) .* v(m .+ (p + q)) .+ v(m .- (p + q)) .* conj.(v(q .- m) .* v(p .- m))
         B = v(-m .- p) .* conj.(v(m .+ (p - q))) .* v(q .- m) .+ v(-m .- q) .* conj.(v(m .+ (q - p))) .* v(p .- m)
@@ -91,26 +107,67 @@ function ghost_jacobian(z::Vector{T}) where {T}
     return J
 end
 
-"Replaces Zauner.precision_bump (ForwardDiff Jacobians at full precision, too slow here): Newton's method with the
-closed-form Jacobian at 256 bits, renewed whenever a step gains under 100 bits."
-function bump(ψ, bits)
-    z, J, prev = re_im_proj(ψ), nothing, Inf
+"Replaces Zauner.precision_bump (ForwardDiff Jacobians at full precision, too slow here): Gauss–Newton on the ghost
+equations, with the closed-form Jacobian factored (QR) at an eighth of the target precision (at least 256 bits), so about
+eight steps reach it; renewed whenever a step gains under 100 bits, at twice the precision when one gains under 10 bits far
+from the floor. Newton's method on Zauner.jl's square subsystem wanders from a poor start, and stark_ghost's double sines in
+Float64 leave some ghosts (d = 204) with residual 2^-5."
+function bump(ψ, bits, name="")
+    z, ns, J, jbits, prev = re_im_proj(ψ), equations(length(ψ)), nothing, clamp(nextpow(2, bits ÷ 8), 256, bits), Inf
+    keep = !isempty(ckdir) && !isempty(name)   # checkpoint each step: J when refactored, then (z, jbits, prev)
+    keep && isfile(ckpath(name * "_z")) && ((z, jbits, prev) = ckload(name * "_z"); J = ckload(name * "_J"))
     while true
-        r = setprecision(() -> Zauner._ghost_olp_func(z .+ 0), BigFloat, bits)
+        r = setprecision(() -> Zauner._ghost_olp_func(z .+ 0, ns), BigFloat, bits)
         res = maximum(abs, r)
-        res > prev / 2^10 && return setprecision(() -> re_im_proj(z), BigFloat, bits)   # at the precision floor
-        (J === nothing || res > prev / big(2)^100) && (J = setprecision(() -> lu(ghost_jacobian(z .+ 0)), BigFloat, 256))
-        z = setprecision(() -> z .- setprecision(() -> J \ (r .+ 0), BigFloat, 256), BigFloat, bits)
+        if res > prev / 2^10
+            (res < ldexp(one(res), -bits ÷ 2) || jbits >= bits) && return setprecision(() -> re_im_proj(z), BigFloat, bits)   # at the floor
+            jbits *= 2
+        end
+        if J === nothing || res > prev / big(2)^100
+            J = setprecision(() -> qr(ghost_jacobian(z .+ 0, ns)), BigFloat, jbits)
+            keep && ckstore(name * "_J", J)
+        end
+        z = setprecision(() -> z .- setprecision(() -> J \ (r .+ 0), BigFloat, jbits), BigFloat, bits)
         prev = res
+        keep && ckstore(name * "_z", (z, jbits, prev))
     end
 end
 
-"Replaces Zauner.ghost_orbit (a wh call per point, minutes at this precision): (d+1) ϕ'D_p ψ / ϕ'ψ at P, by FFT."
+"Radix-2 FFT in place, x_b ← Σ_k x_k t^kb for t = e^(-2πi/n), n = length(x) a power of 2, with the table t[j+1] = t^j."
+function fft2!(x, t)
+    n, j = length(x), 0
+    for i in 1:n-1   # bit-reversal permutation
+        b = n >> 1
+        while j & b != 0
+            j ⊻= b
+            b >>= 1
+        end
+        j ⊻= b
+        i < j && ((x[i+1], x[j+1]) = (x[j+1], x[i+1]))
+    end
+    h = 1
+    while h < n
+        for i in 0:2h:n-1, k in 0:h-1
+            y = x[i+k+h+1] * t[k*(n÷2h)+1]
+            x[i+k+1], x[i+k+h+1] = x[i+k+1] + y, x[i+k+1] - y
+        end
+        h *= 2
+    end
+    return x
+end
+
+"Replaces Zauner.ghost_orbit (a wh call per point, minutes at this precision): (d+1) ϕ'D_p ψ / ϕ'ψ at P, by d discrete Fourier
+transforms Σ_k x_k ω^kb by Bluestein's algorithm, with the chirp c_k = e^(iπk²/d) and the FFT's table of roots of unity computed
+once: GenericFFT recomputes both, by sines in BigFloat, for every transform."
 function ghost_units(ψ, P)
-    d, ϕ = length(ψ), circshift(reverse(ψ), 1)
-    rows = [ifft(conj.(ϕ) .* circshift(ψ, a)) for a in 0:d-1]
-    ζ = [(-cispi(one(real(ψ[1])) / d))^-j for j in 0:2d-1]
-    return [d * (d + 1) * real(ζ[mod(a * b, 2d)+1] * rows[mod(a, d)+1][mod(b, d)+1]) / real(ϕ'ψ) for (a, b) in P]
+    d, ϕ, T = length(ψ), circshift(reverse(ψ), 1), real(eltype(ψ))
+    M, c = nextpow(2, 2d - 1), [cispi(T(mod(k^2, 2d)) / d) for k in 0:d-1]
+    t = [cispi(-2T(j) / M) for j in 0:M÷2-1]
+    w = fft2!([conj.(c); zeros(Complex{T}, M - 2d + 1); conj.(c[end:-1:2])], t)
+    dft(x) = c .* conj.(fft2!(conj.(fft2!([x .* c; zeros(Complex{T}, M - d)], t) .* w), t))[1:d] / M
+    rows = [dft(conj.(ϕ) .* circshift(ψ, a)) for a in 0:d-1]
+    ζ = [(-cispi(one(T) / d))^-j for j in 0:2d-1]
+    return [(d + 1) * real(ζ[mod(a * b, 2d)+1] * rows[mod(a, d)+1][mod(b, d)+1]) / real(ϕ'ψ) for (a, b) in P]
 end
 
 hankel(x) = [x[mod(a + c, length(x))+1] for a in eachindex(x) .- 1, c in eachindex(x) .- 1]
@@ -120,34 +177,62 @@ hankel_prod(T, x) = foldl((T, m) -> (H = hankel(x[m]); mapslices(t -> H * t, T; 
 "Trace forms G[a,b] = Σ_c x[a+c] x[b+c] and C[r,b] = Σ_a x[a+r] x[a] x[a+b]: integral, unlike C G^-1, the product by x[0]."
 forms(x) = (H = hankel(x); (H * H, [x[mod(a + r, end)+1] * x[a+1] for r in eachindex(x) .- 1, a in eachindex(x) .- 1] * H))
 
+"The ring class field H (once per d): an LLL basis of its integers, a real embedding, the automorphisms sending √D to -√D."
+function classfield(F)
+    H = ghostclassfield(F)
+    hb, e, (_, r) = lll_basis(maximal_order(H)), real_embeddings(H)[1], is_square_with_sqrt(H(F.D))
+    return hb, e, [g for g in automorphism_list(H) if g(r) == -r]
+end
+
 "Replaces Zauner._dualize (two LLL runs per number, and a third more bits): √D → -√D on integers of H, by Babai rounding to
 coordinates in an LLL basis U h, then exactly to coordinates in h. Replaces Zauner.signswitch, which takes the first such
 automorphism Hecke lists (that order depends on Hecke's random choices), by the one that makes σ(s) largest."
-function conjugator(F, bits, s)
-    H = ghostclassfield(F)
-    hb, e, (_, r) = lll_basis(maximal_order(H)), real_embeddings(H)[1], is_square_with_sqrt(H(F.D))
-    real_at(z) = BigFloat.(real.(evaluation_function(e, bits + 64).(z)))
-    h, gs = real_at(hb), [real_at(g.(hb)) for g in automorphism_list(H) if g(r) == -r]
-    lap("ring class field H, degree $(length(h))")
+function conjugator((hb, e, lifts), F, bits, s)
+    real_at(z, bits) = BigFloat.(real.(evaluation_function(e, bits).(z)))
+    h = real_at(hb, bits + 64)
     B, U = lll_with_transform(hcat(identity_matrix(ZZ, length(h)), matrix(ZZ, length(h), 1, round.(BigInt, ldexp.(h, bits)))))
     lap("LLL at $bits bits")
     Bf, Ut = BigFloat.(BigInt.(Matrix(B))), transpose(U)
     w = ldexp.((Bf * Bf') \ Bf[:, end], bits)
     coords(x) = BigInt.(vec(Matrix(Ut * matrix(ZZ, length(h), 1, round.(BigInt, x .* w)))))   # in floating point, U g cancels
-    σs = [dot(coords(s), g) for g in gs]
+    k = coords(s)
+    σs = [dot(k, real_at(g.(hb), ndigits(maximum(abs, k); base=2) + 192)) for g in lifts]   # enough bits to rank them
     i = sortperm(σs; rev=true)
     length(i) == 1 || σs[i[1]] - σs[i[2]] > 1e-6 * abs(σs[i[1]]) || error("d = $(F.d): two conjugates of s tie")
-    return x -> dot(coords(x), gs[i[1]])
+    g = real_at(lifts[i[1]].(hb), bits + 64)
+    return x -> dot(coords(x), g)
 end
 
-"Replaces Zauner.pseudonecromancy's core, whose multiplication matrices have denominators that need far more bits: uses trace forms."
-function sic_units(σ, u)
-    x = ghost_basis(u)[1]
+"""Zauner.ghost_basis's recipe search, in its order, with its test at the precision of u instead of in Float64, where a
+Fourier coefficient that is the difference of two entries equal to 53 bits reads as 0 (d = 286). At p = 4log2 max|u| +
+256 bits a zero coefficient of these up-to-quartic sums comes out below 2^-200; the test asks for 2^-128."""
+function normal_recipes(u, d)
+    shifts = [Tuple(Zauner.radix(m, size(u))) for m in 0:length(u)-1]
+    return map(1:ndims(u)) do j
+        rest = Tuple(setdiff(1:ndims(u), j))
+        isbasis(x) = minimum(abs, ifft(dropdims(sum(x; dims=rest); dims=rest))) > ldexp(big(1.0), -128)
+        isbasis(u) && return Zauner.NormalBasisRecipe(:linear, nothing)
+        for kind in (:shifted_quad, :shifted_quad_sq), τ in shifts
+            x = u .+ u .* circshift(u, τ)
+            isbasis(kind === :shifted_quad ? x : x .^ 2) && return Zauner.NormalBasisRecipe(kind, τ)
+        end
+        error("d = $d: no normal-basis recipe for axis $j")
+    end
+end
+
+"Replaces Zauner.pseudonecromancy's core, whose multiplication matrices have denominators that need far more bits: uses trace
+forms of the normal bases that the recipes make."
+function sic_units(σ, u, recipes)
+    x = ghost_basis(u; recipes)[1]
     y = map(x) do x
         G, C = (X -> σ.(X)).(forms(x))
-        λ, V = eigen(Float64.(C / G))
+        issuccess(lu(G; check=false)) || return nothing   # σ(G) is singular when LLL had too few bits to identify G
+        A = Float64.(C / G)
+        all(isfinite, A) || return nothing
+        λ, V = eigen(A)
         ComplexF64.(G) \ (V[:, 1] * λ[1] / V[1, 1])   # the conjugate normal basis, times G^-1
     end
+    any(isnothing, y) && return fill(complex(NaN), size(u))
     return hankel_prod(ComplexF64.(σ.(hankel_prod(u, x))), y)
 end
 
@@ -251,25 +336,31 @@ function fiducial(d)
     isempty(free) && error("d = $d: no free orbit")
     P = orbit(first(free))
     lap("$(repr("text/plain", F)), $(length(P)) points")
-    ψ = bump(setprecision(() -> stark_ghost(F), BigFloat, 128), 256)   # in double precision, ghost_basis can mistake 0 for a basis
-    u = setprecision(() -> ghost_units(ψ, selectdim(P, 1, 1)), BigFloat, 256)
-    x = ghost_basis(u)[1]
+    ψ = checkpoint(() -> bump(setprecision(() -> stark_ghost(F), BigFloat, 128), 256, "$(d)_psi_256"), "$(d)_psi_256")
+    p = 4ceil(Int, log2(maximum(abs, setprecision(() -> ghost_units(ψ, selectdim(P, 1, 1)), BigFloat, 256)))) + 256
+    ψ = checkpoint(() -> bump(ψ, p, "$(d)_psi_$p"), "$(d)_psi_$p")   # p bits: the recipes, up to quartic in u, cannot mistake 0 for a basis
+    u = setprecision(() -> ghost_units(ψ, selectdim(P, 1, 1)), BigFloat, p)
+    recipes = setprecision(() -> normal_recipes(u, d), BigFloat, p)   # reused at full precision
+    x = ghost_basis(u; recipes)[1]
     top = maximum(maximum(abs, X) for X in (hankel_prod(u, x), Iterators.flatten(forms.(x))...))
     bits = 2F.h * (ceil(Int, log2(top)) + 40)   # LLL needs about this many bits to identify these numbers in H
     lap("ghost")
     sic_like(uu) = maximum(abs, abs2.(uu) .- (d + 1)) < 1e-3   # conjugated units have modulus √(d+1)
-    uu = nothing
-    for b in (bits, 2bits, 4bits)   # more, when these numbers are larger in the other embeddings of H
-        ψ = bump(ψ, b + 200)
-        lap("Newton's method to $(b + 200) bits")
-        uu = setprecision(BigFloat, b + 200) do
-            u = ghost_units(ψ, selectdim(P, 1, 1))
-            return sic_units(conjugator(F, b, sum(u .^ 2)), u)
+    uu, H = nothing, nothing
+    for b in round.(Int, bits .* 1.5 .^ (0:3))   # more, when these numbers are larger in the other embeddings of H
+        ψ = checkpoint(() -> bump(ψ, b + 200, "$(d)_psi_$(b + 200)"), "$(d)_psi_$(b + 200)")
+        lap("Gauss–Newton to $(b + 200) bits")
+        uu = checkpoint("$(d)_uu_$b") do
+            setprecision(BigFloat, b + 200) do
+                u = ghost_units(ψ, selectdim(P, 1, 1))
+                isnothing(H) && (H = classfield(F); lap("ring class field H, degree $(length(H[1]))"))
+                return sic_units(conjugator(H, F, b, sum(u .^ 2)), u, recipes)
+            end
         end
         lap("√D → -√D")
         sic_like(uu) && break
     end
-    sic_like(uu) || error("d = $d: conjugated units do not have modulus √(d+1), even at $(4bits) bits")
+    sic_like(uu) || error("d = $d: conjugated units do not have modulus √(d+1), even at $(round(Int, 3.375bits)) bits")
     ψ = sic(uu, P, [Int.(mod.(F.L^i, dd)) for i in 1:2F.k], d)   # L^k = I mod d, so L^2k = I mod 2d
     lap("shift search")
     ψ = canonical(ψ)

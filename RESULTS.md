@@ -3,9 +3,9 @@
 The 89 dimensions in 199..300 that were not already in this repo: `julia --project=. stark.jl <d>` (Julia 1.13.2, one thread), then `refine.py`, then `verify.py --precise` on the Mac.
 
 - Form: the reduced binary quadratic form ⟨a,b,c⟩ of the principal class `stark.jl` chose; q its conductor; h the class number.
-- Mac: 12-core Apple silicon, 96 GB, up to 6 jobs at once. Modal: one Linux x86 container per dimension, about 2.2× slower per job; times there are of the last, checkpoint-resumed attempt.
+- Mac: 12-core Apple silicon, 96 GB, up to 6 jobs at once. Modal: one Linux x86 container per dimension, about 2.2× slower per job; times there are of the last, checkpoint-resumed attempt, so they leave out the Gauss–Newton steps of earlier preempted attempts (273: about 22 hours from first start to finish).
 - Times are wall-clock; peak memory is from `time`. 294 ran its Gauss–Newton on Modal and was finished on the Mac from those checkpoints; its row is the Mac run.
-- The early dimensions ran on earlier, output-preserving versions of `stark.jl` (each version regenerated the 14 algebraic files of 197..253 byte for byte). Rerunning 206 and 214 with the final version changed their double-precision output in the 17th digit and left the refined files byte-identical; the other early dimensions were not rerun.
+- The early dimensions ran on earlier versions of `stark.jl` (each version regenerated the 14 algebraic files of 197..253 byte for byte). Rerunning 206 and 214 with the final version changed their double-precision output in the 17th digit and left the refined files byte-identical; the other early dimensions were not rerun.
 - The last column is the literature search in the README; blank means none found.
 
 | d | form | q | h | U_Z eigenvalue | ran on | stark.jl (s) | peak RSS (GiB) | SIC published before |
@@ -92,7 +92,7 @@ The 89 dimensions in 199..300 that were not already in this repo: `julia --proje
 | 291 | ⟨55,-74,1⟩ | 3 | 8 | 1 | Mac | 528 | 5.7 |  |
 | 292 | ⟨17,-19,1⟩ | 1 | 1 | 1 | Mac | 903 | 11.7 | paper |
 | 293 | ⟨6,-42,1⟩ | 1 | 4 | 1 | Mac | 454 | 6.2 |  |
-| 294 | ⟨1,-293,1⟩ | 1 | 20 | 1 | Mac | 6775 | 24.2 |  |
+| 294 | ⟨1,-293,1⟩ | 1 | 20 | 1 | Modal + Mac | 6775 | 24.2 |  |
 | 295 | ⟨74,-148,1⟩ | 1 | 8 | 1 | Mac | 1226 | 6.6 |  |
 | 296 | ⟨33,-99,1⟩ | 1 | 10 | e^(2πi·2/3) | Mac | 2253 | 7.6 |  |
 | 297 | ⟨37,-44,1⟩ | 1 | 2 | 1 | Mac | 539 | 5.6 |  |

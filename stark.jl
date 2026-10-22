@@ -4,7 +4,7 @@
 # A binary quadratic form, of conductor 1 unless that ghost has F_a symmetry (which Zauner.jl does not support),
 # gives a "ghost" ψ, whose overlaps (d+1) ϕ'D_pψ / ϕ'ψ with its parity reversal ϕ are real Stark units,
 # products of Shintani's double sine function; Gauss–Newton on their equations takes ψ to thousands of bits. On one
-# orbit of the Galois group G, LLL then identifies those overlaps exactly over the ring class field H, through a
+# orbit of the Galois group G, LLL then identifies integral trace forms of those overlaps exactly in the ring class field H, through a
 # normal basis for each cyclic factor of G (Zauner.jl's recipes, tested at enough bits that a vanishing Fourier
 # coefficient shows as zero), with 1.5 times the bits, up to three times, when the estimate falls short. An
 # automorphism of H that sends √D to -√D turns them into the overlaps of a SIC, up to a shift along G: the right

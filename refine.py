@@ -109,7 +109,10 @@ def main() -> None:
     norm = sum((p.real * p.real + p.imag * p.imag for p in psi), arb(0)).sqrt()
     phase = psi[0].conjugate() / abs(psi[0])
     psi = [p * phase / norm for p in psi]
-    rows = [(fraction(p.real), Fraction(0) if j == 0 else fraction(p.imag)) for j, p in enumerate(psi)]
+    def exact(x: Fraction) -> Fraction:  # the converged residual is about 1e-194: a part below 1e-180 is 0
+        return Fraction(0) if abs(x) < Fraction(1, 10**180) else x
+
+    rows = [(exact(fraction(p.real)), Fraction(0) if j == 0 else exact(fraction(p.imag))) for j, p in enumerate(psi)]
     out = Path(f"fiducial_{d}.txt")
     out.write_text(fiducial_text(rows, 150))
     print(f"wrote {out}")

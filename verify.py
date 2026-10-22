@@ -4,7 +4,7 @@
 # [tool.uv]
 # exclude-newer = "2026-10-19T00:00:00Z"
 # ///
-"""Check that files hold SIC-POVM fiducials in Scott and Grassl's conventions; by default every fiducial_<d>.txt here.
+"""Check that files hold SIC-POVM fiducials in Scott and Grassl's conventions; by default every fiducials/fiducial_<d>.txt.
 
 A unit vector psi in C^d is a SIC fiducial iff |<psi|X^a Z^b|psi>|^2 = 1/(d+1) for every (a, b) != (0, 0),
 where X|k> = |k+1 mod d> and Z|k> = exp(2 pi i k/d)|k>. Scott and Grassl's conventions (arXiv:0910.5784):
@@ -31,7 +31,7 @@ else:
     one, cplx, root = 1.0, lambda re_, im: complex(float(re_), float(im)), lambda t: cmath.exp(2j * cmath.pi * t)
 
 files = [Path(arg) for arg in sys.argv[1:] if arg != "--precise"]
-here = sorted(Path(__file__).parent.glob("fiducial_*.txt"))
+here = sorted((Path(__file__).parent / "fiducials").glob("fiducial_*.txt"))
 failed = False
 for path in files or [p for p in here if re.fullmatch(r"fiducial_\d+\.txt", p.name)]:
     rows = [re.findall(r"[+-]\.\d+e-?\d+", line) for line in path.read_text().splitlines() if line.strip()]
